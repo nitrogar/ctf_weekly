@@ -337,71 +337,101 @@ class A2S:
  we need to break the reduced AES to get the key then we can decrypt the flag.
  we need to test the two rounds against differnetial cryptanalysis attack, lets try the A2S encryption ourselfs to have more controle.
 **** scratch:
-#+begin_src python :session a2s
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import hashlib
+#+begin_src python :session a2s :results output raw
+  from Crypto.Cipher import AES
+  from Crypto.Util.Padding import pad, unpad
+  import hashlib
 
-p = []
-c = []
-d0 = bytearray([0] * 16)
-d1 = bytearray([0] * 16)
-d1[0] = 0x01
-d2 = bytearray([0] * 16)
-d2[0] = 0x02
-dc = bytearray([0] * 16)
-dc[0] = 0x0c
+  p = []
+  c = []
+  d0 = bytearray([0] * 16)
+  d1 = bytearray([0] * 16)
+  d1[0] = 0x01
+  d2 = bytearray([0] * 16)
+  d2[0] = 0x02
+  dc = bytearray([0] * 16)
+  dc[0] = 0x0c
 
-key = [0x00] * 16
-key = bytearray(key);
-cipher = A2S(key)
-key_expand = cipher._key_matrices
-delta_ins = [d0,d1,d2,dc]
-delta_outs = []
-logs = []
-for di in delta_ins:
-    ll = []
-    plaintext = [x ^ y for x , y in zip(di,d0)]
-    plain_state = bytes2matrix(plaintext)
-    ll.append(matrix2bytes(plain_state).hex())
-    add_round_key(plain_state, key_expand[0])
-    ll.append(matrix2bytes(plain_state).hex())
-    for i in range(1, cipher.n_rounds):
-        shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
-        ll.append(matrix2bytes(plain_state).hex())
-        sub_bytes(plain_state)
-        ll.append(matrix2bytes(plain_state).hex())
-        mix_columns(plain_state)
-        ll.append(matrix2bytes(plain_state).hex())
-        add_round_key(plain_state,key_expand[i])
-        ll.append(matrix2bytes(plain_state).hex())
+  key = [0x00] * 16
+  key = bytearray(key);
+  cipher = A2S(key)
+  key_expand = cipher._key_matrices
+  delta_ins = [d0,d1,d2,dc]
+  delta_outs = []
+  logs = []
+  for di in delta_ins:
+      ll = []
+      plaintext = [x ^ y for x , y in zip(di,d0)]
+      plain_state = bytes2matrix(plaintext)
+      ll.append(matrix2bytes(plain_state).hex())
+      add_round_key(plain_state, key_expand[0])
+      ll.append(matrix2bytes(plain_state).hex())
+      for i in range(1, cipher.n_rounds):
+          shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
+          ll.append(matrix2bytes(plain_state).hex())
+          # sub_bytes(plain_state)
+          ll.append(matrix2bytes(plain_state).hex())
+          mix_columns(plain_state)
+          ll.append(matrix2bytes(plain_state).hex())
+          add_round_key(plain_state,key_expand[i])
+          ll.append(matrix2bytes(plain_state).hex())
 
-    sub_bytes(plain_state)
-    ll.append(matrix2bytes(plain_state).hex())
-    shift_rows(plain_state)
-    ll.append(matrix2bytes(plain_state).hex())
-    mix_columns(plain_state)  # added mix_columns 
-    ll.append(matrix2bytes(plain_state).hex())
-    add_round_key(plain_state, key_expand[-1])
-    ll.append(matrix2bytes(plain_state).hex())
-    logs.append(ll)
+      # sub_bytes(plain_state)
+      ll.append(matrix2bytes(plain_state).hex())
+      shift_rows(plain_state)
+      ll.append(matrix2bytes(plain_state).hex())
+      mix_columns(plain_state)  # added mix_columns 
+      ll.append(matrix2bytes(plain_state).hex())
+      add_round_key(plain_state, key_expand[-1])
+      ll.append(matrix2bytes(plain_state).hex())
+      logs.append(ll)
 
-for l in logs:
-    print('|' + '|'.join([i for i in l]) + '|')
+
+  for l in logs[1:]:
+      print("|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |")
+      print('|' + '|'.join([i for i in logs[0]]) + '|')
+      print('|' + '|'.join([i for i in l]) + '|')
+      print()
 #+end_src
 
-| plain    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 02000000000000000000000000000000 | 0c000000000000000000000000000000 |
-| add keys | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 02000000000000000000000000000000 | 0c000000000000000000000000000000 |
-| shift    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 02000000000000000000000000000000 | 0c000000000000000000000000000000 |
-| sbox     | 63636363636363636363636363636363 | 7c636363636363636363636363636363 | 77636363636363636363636363636363 | fe636363636363636363636363636363 |
-| mix      | 63636363636363636363636363636363 | 5d7c7c42636363636363636363636363 | 4b77775f636363636363636363636363 | 42fefedf636363636363636363636363 |
-| add keys | 01000000010000000100000001000000 | 3f1f1f21010000000100000001000000 | 2914143c010000000100000001000000 | 209d9dbc010000000100000001000000 |
-| sbox     | 7c6363637c6363637c6363637c636363 | 75c0c0fd7c6363637c6363637c636363 | a5fafaeb7c6363637c6363637c636363 | b75e5e657c6363637c6363637c636363 |
-| shift    | 7c6363637c6363637c6363637c636363 | 756363637c6363fd7c63c0637cc06363 | a56363637c6363eb7c63fa637cfa6363 | b76363637c6363657c635e637c5e6363 |
-| mix      | 5d7c7c425d7c7c425d7c7c425d7c7c42 | 4f757559c3e2c565fe8221e1a321dfe1 | f4a5a532d5f4ff49c4cc55dbed55e5db | d0b7b7045b7a764e603b067f1a06417f |
-| add keys | c6e4e48ba48787e8c6e4e48ba48787e8 | d4eded903a193ecf651ab9285ada244b | 6f3d3dfb2c0f04e35f54cd1214ae1e71 | 4b2f2fcda2818de4fba39eb6e3fdbad5 |
-|          |                                  |                                  |                                  |                                  |
-|          |                                  |                                  |                                  |                                  |
+#+RESULTS:
+| *        |                                * |                                * |                          xor'ed |                                  |                   |
+| plain    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
+| add keys | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
+| shift    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
+| sbox     | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
+| mix      | 00000000000000000000000000000000 | 02010103000000000000000000000000 | 2010103000000000000000000000000 |                                  |                   |
+| add keys | 62636363626363636263636362636363 | 60626260626363636263636362636363 | 2010103000000000000000000000000 |                                 |                   |
+| sbox     | 62636363626363636263636362636363 | 60626260626363636263636362636363 | 2010103000000000000000000000000 |                                  |                   |
+| shift    | 62636363626363636263636362636363 | 60636363626363606263626362626363 | 2000000000000030000010000010000 | 02010103000000000000000000000000 | inverse shift     |
+| mix      | 61626260616262606162626061626260 | 65606066626167666061606162606361 | 4020206030305060103020103020101 | 02000000000000030000010000010000 | invese mixcolumns |
+| add keys | fafafaa9989999cafafafaa9989999ca | fef8f8af9b9a9cccfbf9f8a89b9b98cb | 4020206030305060103020103020101 |  4020206030305060103020103020101 | xor'ed            |
+#+TBLFM: $4='(hex-xor $3 $2)
+
+| plain    | 00000000000000000000000000000000 | 02000000000000000000000000000000 | 2000000000000000000000000000000 |
+| add keys | 00000000000000000000000000000000 | 02000000000000000000000000000000 | 2000000000000000000000000000000 |
+| shift    | 00000000000000000000000000000000 | 02000000000000000000000000000000 | 2000000000000000000000000000000 |
+| sbox     | 00000000000000000000000000000000 | 02000000000000000000000000000000 | 2000000000000000000000000000000 |
+| mix      | 00000000000000000000000000000000 | 04020206000000000000000000000000 | 4020206000000000000000000000000 |
+| add keys | 62636363626363636263636362636363 | 66616165626363636263636362636363 | 4020206000000000000000000000000 |
+| sbox     | 62636363626363636263636362636363 | 66616165626363636263636362636363 | 4020206000000000000000000000000 |
+| shift    | 62636363626363636263636362636363 | 66636363626363656263616362616363 | 4000000000000060000020000020000 |
+| mix      | 61626260616262606162626061626260 | 6966666c6764686c6364666267666062 | 804040c06060a0c0206040206040202 |
+| add keys | fafafaa9989999cafafafaa9989999ca | f2fefea59e9f93c6f8fcfeab9e9d9bc8 | 804040c06060a0c0206040206040202 |
+#+TBLFM: $4='(hex-xor $3 $2)
+| plain    | 00000000000000000000000000000000 | 0c000000000000000000000000000000 | c000000000000000000000000000000  |
+| add keys | 00000000000000000000000000000000 | 0c000000000000000000000000000000 | c000000000000000000000000000000  |
+| shift    | 00000000000000000000000000000000 | 0c000000000000000000000000000000 | c000000000000000000000000000000  |
+| sbox     | 00000000000000000000000000000000 | 0c000000000000000000000000000000 | c000000000000000000000000000000  |
+| mix      | 00000000000000000000000000000000 | 180c0c14000000000000000000000000 | 180c0c14000000000000000000000000 |
+| add keys | 62636363626363636263636362636363 | 7a6f6f77626363636263636362636363 | 180c0c14000000000000000000000000 |
+| sbox     | 62636363626363636263636362636363 | 7a6f6f77626363636263636362636363 | 180c0c14000000000000000000000000 |
+| shift    | 62636363626363636263636362636363 | 7a6363636263637762636f63626f6363 | 180000000000001400000c00000c0000 |
+| mix      | 61626260616262606162626061626260 | 517a7a4875765e486d767a6c757a6e6c | 3018182814143c280c14180c14180c0c |
+| add keys | fafafaa9989999cafafafaa9989999ca | cae2e2818c8da5e2f6eee2a58c8195c6 | 3018182814143c280c14180c14180c0c |
+#+TBLFM: $4='(hex-xor $3 $2)
+
+
 
 #+begin_src python :session a2s
 def print_ddt(ddt, max_rows=30, max_cols=30):
