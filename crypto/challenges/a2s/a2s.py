@@ -1,15 +1,3 @@
-#+TITLE: Crypto CTF Challenges
-#+AUTHOR: Black1fsh
-
-
-
-* Symmetric Encryption
-** AES-Based
-*** challenge A2S ( PWN2WINCTF 2021) [Reduced Round AES, Differntial Cryptanalysis]:
-**** Description : Laura found some plaintext/ciphertext pairs. It looks like the AI have modified an old crypto cipher to make it run faster, but used the old one to leave a last warning. Is it possible to recover this warning?
-**** COMMENT code:
-
-#+begin_src python :session a2s  :file  :results output raw :exports both
 """
 This is a slightly modified version of BoppreH's A2S implementation found at at https://github.com/boppreh/AES
 Follow the original disclaimer
@@ -224,16 +212,18 @@ class A2S:
         
         for i in range(1, self.n_rounds):
             shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
+            earlier = matrix2bytes(plain_state)
             sub_bytes(plain_state)
             mix_columns(plain_state)
             add_round_key(plain_state, self._key_matrices[i])
             
         sub_bytes(plain_state)
+        before = matrix2bytes(plain_state)
         shift_rows(plain_state)
         mix_columns(plain_state)  # added mix_columns 
         add_round_key(plain_state, self._key_matrices[-1])
 
-        return matrix2bytes(plain_state) # p4: original challenge only returned the first thing, rest was added for testing the solution
+        return matrix2bytes(plain_state), before, earlier # p4: original challenge only returned the first thing, rest was added for testing the solution
 
     def decrypt_block(self, ciphertext):
         """
@@ -256,205 +246,3 @@ class A2S:
         add_round_key(cipher_state, self._key_matrices[0])
 
         return matrix2bytes(cipher_state)
-
-#+end_src
-
-#+RESULTS:
-
-
-#+begin_src python :session a2s :file  :results output  :exports both
-
-  from Crypto.Cipher import AES
-  from Crypto.Util.Padding import pad, unpad
-  import hashlib
-  from uuid import uuid4
-  from challenges.a2s.a2s import A2S
-
-  key = uuid4().bytes
-  cipher = A2S(key)
-  
-  p = []
-  c = []
-
-  for _ in range(3):
-      plaintext = uuid4().bytes
-      p.append(plaintext.hex())
-      ciphertext = cipher.encrypt_block(plaintext)
-      c.append(ciphertext.hex())
-
-  flag = open("flag.txt", "rb").read()   
-  sha1 = hashlib.sha1()
-  sha1.update(str(key).encode('ascii'))
-  new_key = sha1.digest()[:16]
-  iv = uuid4().bytes
-  cipher = AES.new(new_key, AES.MODE_CBC, IV=iv)
-  encrypted_flag = cipher.encrypt(pad(flag, 16))
-
-  print('plaintexts = ', p) #
-  print('ciphertexts = ', c)
-  print('iv = ', iv.hex())
-  print('encrypted_flag = ', encrypted_flag.hex())
-  print(hex(key[0]), hex(key[-1]))
-#+end_src
-
-#+RESULTS:
-
-#+begin_src python
-  plaintexts =  ['0573e60e862b4c46bdc5fcea1d0316ea', '2dd6d234bfe14fb0a0c4786b3891698d', '533698ece7db47df82413aba5f4f0cfb']
-  ciphertexts =  ['42352473eeb42625210217a339dbc69f', 'b14c9d2d835c725e13598907a5b89165', 'f96b99b82fe4543150604d20e8cd5fda']
-  iv =  35a84c9bf33d40e8bfab6e7e62209b49
-  encrypted_flag =  ef14d5f8f4f51b34fb251bacf309e0c4386c33021903528b475d232a401aeeb49e23b3bc2a416b386590ae0d5580cbfebce4a40ed563f664f28d1cfa8e4cde02bfe077b1ef583bf2850cf0ac764182e7
-  0x3 0x39
-#+end_src
-**** solution:
-
- modified AES with just two rounds if the key size is 16, from the A2S class :
- #+begin_src python
-    rounds_by_key_size = {16: 2, 24: 12, 32: 14}  # 2_ROUND_AES
- #+end_src
- however the last rounds have mixcolumns, code from A2S class:
-#+begin_src python
-  plain_state = bytes2matrix(plaintext)
-
-  add_round_key(plain_state, self._key_matrices[0])
-
-  for i in range(1, self.n_rounds):
-      shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
-      earlier = matrix2bytes(plain_state)
-      sub_bytes(plain_state)
-      mix_columns(plain_state)
-      add_round_key(plain_state, self._key_matrices[i])
-
-  sub_bytes(plain_state)
-  before = matrix2bytes(plain_state)
-  shift_rows(plain_state)
-  mix_columns(plain_state)  # added mix_columns 
-  add_round_key(plain_state, self._key_matrices[-1])
-
-#+end_src
-
- the flag is encrypted with normal AES with the same key of the given plaintext, ciphertext pairs.
- we need to break the reduced AES to get the key then we can decrypt the flag.
- we need to test the two rounds against differnetial cryptanalysis attack, lets try the A2S encryption ourselfs to have more controle.
-**** scratch:
-#+begin_src python :session a2s
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import hashlib
-
-p = []
-c = []
-d0 = bytearray([0] * 16)
-d1 = bytearray([0] * 16)
-d1[0] = 0x01
-d2 = bytearray([0] * 16)
-d2[0] = 0x02
-dc = bytearray([0] * 16)
-dc[0] = 0x0c
-
-key = [0x00] * 16
-key = bytearray(key);
-cipher = A2S(key)
-key_expand = cipher._key_matrices
-delta_ins = [d0,d1,d2,dc]
-delta_outs = []
-logs = []
-for di in delta_ins:
-    ll = []
-    plaintext = [x ^ y for x , y in zip(di,d0)]
-    plain_state = bytes2matrix(plaintext)
-    ll.append(matrix2bytes(plain_state).hex())
-    add_round_key(plain_state, key_expand[0])
-    ll.append(matrix2bytes(plain_state).hex())
-    for i in range(1, cipher.n_rounds):
-        shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
-        ll.append(matrix2bytes(plain_state).hex())
-        sub_bytes(plain_state)
-        ll.append(matrix2bytes(plain_state).hex())
-        mix_columns(plain_state)
-        ll.append(matrix2bytes(plain_state).hex())
-        add_round_key(plain_state,key_expand[i])
-        ll.append(matrix2bytes(plain_state).hex())
-
-    sub_bytes(plain_state)
-    ll.append(matrix2bytes(plain_state).hex())
-    shift_rows(plain_state)
-    ll.append(matrix2bytes(plain_state).hex())
-    mix_columns(plain_state)  # added mix_columns 
-    ll.append(matrix2bytes(plain_state).hex())
-    add_round_key(plain_state, key_expand[-1])
-    ll.append(matrix2bytes(plain_state).hex())
-    logs.append(ll)
-
-for l in logs:
-    print('|' + '|'.join([i for i in l]) + '|')
-#+end_src
-
-| plain    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 02000000000000000000000000000000 | 0c000000000000000000000000000000 |
-| add keys | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 02000000000000000000000000000000 | 0c000000000000000000000000000000 |
-| shift    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 02000000000000000000000000000000 | 0c000000000000000000000000000000 |
-| sbox     | 63636363636363636363636363636363 | 7c636363636363636363636363636363 | 77636363636363636363636363636363 | fe636363636363636363636363636363 |
-| mix      | 63636363636363636363636363636363 | 5d7c7c42636363636363636363636363 | 4b77775f636363636363636363636363 | 42fefedf636363636363636363636363 |
-| add keys | 01000000010000000100000001000000 | 3f1f1f21010000000100000001000000 | 2914143c010000000100000001000000 | 209d9dbc010000000100000001000000 |
-| sbox     | 7c6363637c6363637c6363637c636363 | 75c0c0fd7c6363637c6363637c636363 | a5fafaeb7c6363637c6363637c636363 | b75e5e657c6363637c6363637c636363 |
-| shift    | 7c6363637c6363637c6363637c636363 | 756363637c6363fd7c63c0637cc06363 | a56363637c6363eb7c63fa637cfa6363 | b76363637c6363657c635e637c5e6363 |
-| mix      | 5d7c7c425d7c7c425d7c7c425d7c7c42 | 4f757559c3e2c565fe8221e1a321dfe1 | f4a5a532d5f4ff49c4cc55dbed55e5db | d0b7b7045b7a764e603b067f1a06417f |
-| add keys | c6e4e48ba48787e8c6e4e48ba48787e8 | d4eded903a193ecf651ab9285ada244b | 6f3d3dfb2c0f04e35f54cd1214ae1e71 | 4b2f2fcda2818de4fba39eb6e3fdbad5 |
-|          |                                  |                                  |                                  |                                  |
-|          |                                  |                                  |                                  |                                  |
-
-#+begin_src python :session a2s
-def print_ddt(ddt, max_rows=30, max_cols=30):
-      """Print the DDT in a formatted way, limited to specified dimensions."""
-      print("\nDifferential Distribution Table (partial):")
-      print("   |", end=" ")
-
-      # Print header
-      for j in range(max_cols):
-          print(f"{j:2X}", end=" ")
-      print("\n---+" + "---" * max_cols)
-
-      # Print rows
-      for i in range(max_rows):
-          print(f"{i:2X} |", end=" ")
-          for j in range(max_cols):
-              print(f"{ddt[i][j]:2d}", end=" ")
-          print()
-
-#+end_src
-#+begin_src python :session a2s
-  p0 = 0x41
-  res = {}
-  size = len(s_box)
-  ddt = [[0 for _ in range(size)] for _ in range(size)]
-  for delta_in in range(size):
-        for x in range(size):
-            y1 = s_box[x]
-            y2 = s_box[x ^ delta_in]
-            delta_out = y1 ^ y2
-            ddt[delta_in][delta_out] += 1
-    print_ddt(ddt, 50, 50)
-  flatten = [i for k in ddt for i in k]
-  print(flatten.count(256))
-#+end_src
-#+begin_src emacs-lisp :tangle yes
- (defun hex-xor (a b)
-     (interactive
-      (list
-       (read-string "first hex string: ")
-       (read-string "second hex string: ")))
-     (message "A= %s B= %s" a b)
-     (let*
-         ((num_a (string-to-number (format "%s" a) 16))
-          (num_b (string-to-number (format "%s" b) 16))
-          (result (format "%x" (logxor num_a num_b))))
-          (message "a_int = %s b_int = %s result = %s" num_a num_b result)
-
-  result)
- )
-#+end_src
-
-* Asymmetric Encryption
-* Probaility-Based Encryption
-
-* General Cryptanalysis Code Snippet
