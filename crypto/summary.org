@@ -312,6 +312,10 @@ class A2S:
  #+begin_src python
     rounds_by_key_size = {16: 2, 24: 12, 32: 14}  # 2_ROUND_AES
  #+end_src
+
+ #+RESULTS:
+ : None
+
  however the last rounds have mixcolumns, code from A2S class:
 #+begin_src python
   plain_state = bytes2matrix(plaintext)
@@ -341,10 +345,12 @@ class A2S:
   from Crypto.Cipher import AES
   from Crypto.Util.Padding import pad, unpad
   import hashlib
+  from uuid import uuid4
 
   p = []
   c = []
-  d0 = bytearray([0] * 16)
+  plaintext = uuid4().bytes
+  d0 = plaintext #bytearray([0] * 16)
   d1 = bytearray([0] * 16)
   d1[0] = 0x01
   d2 = bytearray([0] * 16)
@@ -352,11 +358,11 @@ class A2S:
   dc = bytearray([0] * 16)
   dc[0] = 0x0c
 
-  key = [0x00] * 16
+  key = [0x41] * 16
   key = bytearray(key);
   cipher = A2S(key)
   key_expand = cipher._key_matrices
-  delta_ins = [d0,d1,d2,dc]
+  delta_ins = [d1,d2,dc]
   delta_outs = []
   logs = []
   for di in delta_ins:
@@ -369,14 +375,14 @@ class A2S:
       for i in range(1, cipher.n_rounds):
           shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
           ll.append(matrix2bytes(plain_state).hex())
-          # sub_bytes(plain_state)
+          sub_bytes(plain_state)
           ll.append(matrix2bytes(plain_state).hex())
           mix_columns(plain_state)
           ll.append(matrix2bytes(plain_state).hex())
           add_round_key(plain_state,key_expand[i])
           ll.append(matrix2bytes(plain_state).hex())
 
-      # sub_bytes(plain_state)
+      sub_bytes(plain_state)
       ll.append(matrix2bytes(plain_state).hex())
       shift_rows(plain_state)
       ll.append(matrix2bytes(plain_state).hex())
@@ -390,11 +396,80 @@ class A2S:
   for l in logs[1:]:
       print("|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |")
       print('|' + '|'.join([i for i in logs[0]]) + '|')
-      print('|' + '|'.join([i for i in l]) + '|')
+      print('|' + '|'.join([i for i in l]) + '| | |')
       print()
+
+  def ishift(b):
+      s = bytearray.fromhex(b)
+      s = bytes2matrix(s)
+      inv_shift_rows(s)
+      s = matrix2bytes(s)
+      s = s.hex()
+      return s
+  def imix(b):
+      s = bytearray.fromhex(b)
+      s = bytes2matrix(s)
+      inv_mix_columns(s)
+      s = matrix2bytes(s)
+      s = s.hex()
+      return s
+  def ixor(b):
+      x = b.split(" | ")
+      s0 = bytearray.fromhex(x[0])
+      s1 = bytearray.fromhex(x[1])
+      s = bytearray([i ^ k for i,k in zip(s0,s1)])
+      s = s.hex()
+      return s
+
 #+end_src
 
 #+RESULTS:
+
+
+
+P(delta_x) ?= delta_y0 delta_y1 delta_y2 .......
+1/2^128
+key = '41414141414141414141414141414141'
+|   | plain    | 7d95d7d9ba564e419cada946087df33b | 7e95d7d9ba564e419cada946087df33b | 03000000000000000000000000000000 | xor'ed | 03000000000000000000000000000000 | NO     |
+|   | add keys | 3cd49698fb170f00ddece807493cb27a | 3fd49698fb170f00ddece807493cb27a | 03000000000000000000000000000000 | xored  | 03000000000000000000000000000000 | NO     |
+|   | shift    | 3c17e87afbecb298dd3c960049d40f07 | 3f17e87afbecb298dd3c960049d40f07 | 03000000000000000000000000000000 | xor'ed | 03000000000000000000000000000000 | shift  |
+|!  | sbox     | ebf09bda0fce3746c1eb90633b4876c5 | 75f09bda0fce3746c1eb90633b4876c5 | 9e000000000000000000000000000000 | xor'ed | 9e000000000000000000000000000000 |  1/2^16 |
+|!  | mix      | 877c43e2269765644cc4b4e51df4cbe2 | a0e2dd5b269765644cc4b4e51df4cbe2 | 279e9eb9000000000000000000000000 | xor'ed | 279e9eb9000000000000000000000000 |        |
+|!  | add keys | 44be8120a414e6e78f0676279f774861 | 63201f99a414e6e78f0676279f774861 | 279e9eb9000000000000000000000000 | xor'ed | 279e9eb9000000000000000000000000 |        |
+|!  | sbox     | 1bae0cb749fa8e94736f38ccdbf552ef | fbb7c0ee49fa8e94736f38ccdbf552ef | e019cc59000000000000000000000000 | xor'ed | e019cc59000000000000000000000000 |  1/2^16 |
+|   | shift    | 1bfa38ef496f52b773f50c94dbae8ecc | fbfa38ef496f52ee73f5c094dbb78ecc | e0000000000000590000cc0000190000 | xor'ed | e019cc59000000000000000000000000 | ishift |
+|   | mix      | f453bb2ac6d640937a02395f06d93dd5 | 2fb35b119f8fab21b64dba932deb24cc | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | e0000000000000590000cc0000190000 | imix   |
+|   | add keys | d97d95fb697bedc1166d56cfe835d1c6 | 029d75c030220673da22d503c307c8df | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | dbe0e03b5959ebb2cc4f83cc2b321919 |        |
+|   |          |                                  |                                  |                                  |        |                                  |        |
+|   |          |                                  |                                  |                                  |        |                                  |        |
+
+|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
+|7d95d7d9ba564e419cada946087df33b|3cd49698fb170f00ddece807493cb27a|3c17e87afbecb298dd3c960049d40f07|ebf09bda0fce3746c1eb90633b4876c5|877c43e2269765644cc4b4e51df4cbe2|44be8120a414e6e78f0676279f774861|1bae0cb749fa8e94736f38ccdbf552ef|1bfa38ef496f52b773f50c94dbae8ecc|f453bb2ac6d640937a02395f06d93dd5|d97d95fb697bedc1166d56cfe835d1c6|
+|7095d7d9ba564e419cada946087df33b|31d49698fb170f00ddece807493cb27a|3117e87afbecb298dd3c960049d40f07|c7f09bda0fce3746c1eb90633b4876c5|df506f96269765644cc4b4e51df4cbe2|1c92ad54a414e6e78f0676279f774861|9c4f952049fa8e94736f38ccdbf552ef|9cfa38ef496f522073f59594db4f8ecc|e1d43cb85141e2a6e3b210c63e00dc34|ccfa1269feec4ff48fdd7f56d0ec3027| | |
+bytearray(b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
+|2a633c322fe74c0f8e9aed3601ed02c2|6b227d736ea60d4ecfdbac7740ac4383|6ba6ac836edb4373cfac7d4e40220d77|7f2491ec9fb91a8f8a91ff2f0993d7f5|ef734df76057981c77868fb59ea32bae|2cb18f35e2d41b9fb4444d771c20a82d|71c873969848afdb8d1be3f59cb7c2d8|7148e3d8981bc2968db773db9cc8aff5|010797935265bd5d6bb6aae53a081529|2c29b942fdc8100f07d9c575d4e4f93a|
+|29633c322fe74c0f8e9aed3601ed02c2|68227d736ea60d4ecfdbac7740ac4383|68a6ac836edb4373cfac7d4e40220d77|452491ec9fb91a8f8a91ff2f0993d7f5|9b4977b96057981c77868fb59ea32bae|588bb57be2d41b9fb4444d771c20a82d|6a3dd5219848afdb8d1be3f59cb7c2d8|6a48e3d8981bc2218db7d5db9c3daff5|371c8cbee5d27f28cd47fd433ef9e0dc|1a32a26f4a7fd27aa12892d3d0150ccf| | |
+
+|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
+|2a633c322fe74c0f8e9aed3601ed02c2|6b227d736ea60d4ecfdbac7740ac4383|6ba6ac836edb4373cfac7d4e40220d77|7f2491ec9fb91a8f8a91ff2f0993d7f5|ef734df76057981c77868fb59ea32bae|2cb18f35e2d41b9fb4444d771c20a82d|71c873969848afdb8d1be3f59cb7c2d8|7148e3d8981bc2968db773db9cc8aff5|010797935265bd5d6bb6aae53a081529|2c29b942fdc8100f07d9c575d4e4f93a|
+|27633c322fe74c0f8e9aed3601ed02c2|66227d736ea60d4ecfdbac7740ac4383|66a6ac836edb4373cfac7d4e40220d77|332491ec9fb91a8f8a91ff2f0993d7f5|773f01236057981c77868fb59ea32bae|b4fdc3e1e2d41b9fb4444d771c20a82d|8d542ef89848afdb8d1be3f59cb7c2d8|8d48e3d8981bc2f88db72edb9c54aff5|e2fb6b8c3c0b0f81365110b8852b89b5|cfd5455d93a6a2d35a3e7f286bc765a6| | |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 | *        |                                * |                                * |                          xor'ed |                                  |                   |
 | plain    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
 | add keys | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
