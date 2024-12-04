@@ -16,9 +16,9 @@ Follow the original disclaimer
 __________________________________
 This is an exercise in secure symmetric-key encryption, implemented in pure
 Python (no external libraries needed).
-Original AES-128 implementation by Bo Zhu (http://about.bozhu.me) at 
+Original AES-128 implementation by Bo Zhu (http://about.bozhu.me) at
 https://github.com/bozhu/AES-Python . PKCS#7 padding, CBC mode, PKBDF2, HMAC,
-byte array and string support added by me at https://github.com/boppreh/aes. 
+byte array and string support added by me at https://github.com/boppreh/aes.
 Other block modes contributed by @righthandabacus.
 Although this is an exercise, the `encrypt` and `decrypt` functions should
 provide reasonable security to encrypted messages.
@@ -88,7 +88,7 @@ def inv_shift_rows(s):
     s[0][3], s[1][3], s[2][3], s[3][3] = s[1][3], s[2][3], s[3][3], s[0][3]
 
 def add_round_key(s, k):
-    
+
     for i in range(4):
         for j in range(4):
             s[i][j] ^= k[i][j]
@@ -221,16 +221,16 @@ class A2S:
         plain_state = bytes2matrix(plaintext)
 
         add_round_key(plain_state, self._key_matrices[0])
-        
+
         for i in range(1, self.n_rounds):
             shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
             sub_bytes(plain_state)
             mix_columns(plain_state)
             add_round_key(plain_state, self._key_matrices[i])
-            
+
         sub_bytes(plain_state)
         shift_rows(plain_state)
-        mix_columns(plain_state)  # added mix_columns 
+        mix_columns(plain_state)  # added mix_columns
         add_round_key(plain_state, self._key_matrices[-1])
 
         return matrix2bytes(plain_state) # p4: original challenge only returned the first thing, rest was added for testing the solution
@@ -272,7 +272,7 @@ class A2S:
 
   key = uuid4().bytes
   cipher = A2S(key)
-  
+
   p = []
   c = []
 
@@ -282,7 +282,7 @@ class A2S:
       ciphertext = cipher.encrypt_block(plaintext)
       c.append(ciphertext.hex())
 
-  flag = open("flag.txt", "rb").read()   
+  flag = open("flag.txt", "rb").read()
   sha1 = hashlib.sha1()
   sha1.update(str(key).encode('ascii'))
   new_key = sha1.digest()[:16]
@@ -332,7 +332,7 @@ class A2S:
   sub_bytes(plain_state)
   before = matrix2bytes(plain_state)
   shift_rows(plain_state)
-  mix_columns(plain_state)  # added mix_columns 
+  mix_columns(plain_state)  # added mix_columns
   add_round_key(plain_state, self._key_matrices[-1])
 
 #+end_src
@@ -340,6 +340,241 @@ class A2S:
  the flag is encrypted with normal AES with the same key of the given plaintext, ciphertext pairs.
  we need to break the reduced AES to get the key then we can decrypt the flag.
  we need to test the two rounds against differnetial cryptanalysis attack, lets try the A2S encryption ourselfs to have more controle.
+#+begin_src python :session zz
+  from z3 import *
+  def print_state(state_list):
+    # Get the maximum length of string representation
+    max_len = max(len(str(x)) for x in state_list)
+    padding = max_len + 2  # Add 2 for some extra space
+
+    # Calculate total width for the box
+    total_width = (padding * 4) + 3  # 4 columns, +3 for spaces between
+
+    # Print with box drawing and adaptive width
+    print('┌' + '─' * total_width + '┐')
+    for i in range(4):
+        row = ' '.join(f'{str(state_list[i*4 + j]):{padding}}' for j in range(4))
+        print(f'│ {row} │')
+    print('└' + '─' * total_width + '┘')
+  def mult2(x):
+    return If(Extract(7,7,x) == 1, (x << 1) ^ BitVecVal(0x1b, 8), x << 1)
+  s_box = (
+      0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
+      0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
+      0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
+      0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,
+      0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,
+      0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,
+      0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,
+      0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,
+      0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,
+      0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,
+      0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,
+      0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,
+      0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,
+      0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
+      0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
+      0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16,
+  )
+
+  inv_s_box = (
+      0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
+      0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87, 0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB,
+      0x54, 0x7B, 0x94, 0x32, 0xA6, 0xC2, 0x23, 0x3D, 0xEE, 0x4C, 0x95, 0x0B, 0x42, 0xFA, 0xC3, 0x4E,
+      0x08, 0x2E, 0xA1, 0x66, 0x28, 0xD9, 0x24, 0xB2, 0x76, 0x5B, 0xA2, 0x49, 0x6D, 0x8B, 0xD1, 0x25,
+      0x72, 0xF8, 0xF6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xD4, 0xA4, 0x5C, 0xCC, 0x5D, 0x65, 0xB6, 0x92,
+      0x6C, 0x70, 0x48, 0x50, 0xFD, 0xED, 0xB9, 0xDA, 0x5E, 0x15, 0x46, 0x57, 0xA7, 0x8D, 0x9D, 0x84,
+      0x90, 0xD8, 0xAB, 0x00, 0x8C, 0xBC, 0xD3, 0x0A, 0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3, 0x45, 0x06,
+      0xD0, 0x2C, 0x1E, 0x8F, 0xCA, 0x3F, 0x0F, 0x02, 0xC1, 0xAF, 0xBD, 0x03, 0x01, 0x13, 0x8A, 0x6B,
+      0x3A, 0x91, 0x11, 0x41, 0x4F, 0x67, 0xDC, 0xEA, 0x97, 0xF2, 0xCF, 0xCE, 0xF0, 0xB4, 0xE6, 0x73,
+      0x96, 0xAC, 0x74, 0x22, 0xE7, 0xAD, 0x35, 0x85, 0xE2, 0xF9, 0x37, 0xE8, 0x1C, 0x75, 0xDF, 0x6E,
+      0x47, 0xF1, 0x1A, 0x71, 0x1D, 0x29, 0xC5, 0x89, 0x6F, 0xB7, 0x62, 0x0E, 0xAA, 0x18, 0xBE, 0x1B,
+      0xFC, 0x56, 0x3E, 0x4B, 0xC6, 0xD2, 0x79, 0x20, 0x9A, 0xDB, 0xC0, 0xFE, 0x78, 0xCD, 0x5A, 0xF4,
+      0x1F, 0xDD, 0xA8, 0x33, 0x88, 0x07, 0xC7, 0x31, 0xB1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xEC, 0x5F,
+      0x60, 0x51, 0x7F, 0xA9, 0x19, 0xB5, 0x4A, 0x0D, 0x2D, 0xE5, 0x7A, 0x9F, 0x93, 0xC9, 0x9C, 0xEF,
+      0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61,
+      0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D,
+  )
+  solver = Solver()
+  s_bytes =[BitVec(f'b_{i}',8) for i in range(16)]
+  # define sbox
+  s_sbox = Array('s_box', BitVecSort(8), BitVecSort(8))
+  s_index = BitVec('s_index',8)
+  solver.add(s_index >= 0)
+  solver.add(s_index <= 0xff)
+  # polulate sbox
+  for i, s in enumerate(s_box):
+      # s_sbox = Store(s_sbox, BitVecVal(i,8), BitVecVal(s, 8))
+      solver.add(Select(s_sbox,BitVecVal(i,8)) == BitVecVal(s,8))
+
+  # bytes to aes state
+  s_state = [s_bytes[i+j*4] for i in range(4) for j in range(4)]
+
+  print_state(s_state)
+
+  for i in range(16):
+      s_state[i] = Select(s_sbox,s_state[i])
+  print("after sbox: ")
+  print_state(s_state)
+
+  for i in range(0,len(s_state) - 1,4):
+    # print(f"s_state[{i}: {i+ 4}] = s_state[{i + i//4}:{i + 4}], s_state[{i}: {i + i//4}]")
+    s_state[i: i+ 4] = s_state[i + i//4:i + 4] +  s_state[i : i + i//4]
+  print("after shift rows:")
+  print_state(s_state)
+  for i in range(4):
+    a0, a1, a2, a3 = s_state[i::4]
+
+    s_state[i] = mult2(a0) ^ (mult2(a1) ^ a1) ^ a2 ^ a3        # 2*a0 + 3*a1 + a2 + a3
+    s_state[i+4] = a0 ^ mult2(a1) ^ (mult2(a2) ^ a2) ^ a3      # a0 + 2*a1 + 3*a2 + a3
+    s_state[i+8] = a0 ^ a1 ^ mult2(a2) ^ (mult2(a3) ^ a3)      # a0 + a1 + 2*a2 + 3*a3
+    s_state[i+12] = (mult2(a3) ^ a3) ^ a0 ^ a1 ^ mult2(a2)      # 3*a3 + a0 + a1 + 2*a2
+
+  print("after mix columns:")
+  print_state(s_state)
+
+  
+  # solver.add(result == 0xff)
+  # if solver.check() == sat:
+  #      model = solver.model()
+  #      print(model)
+  #      print(f"correct sbox index {model[s_index]}")
+  # print("done")
+
+#|   | plain    | 7d95d7d9ba564e419cada946087df33b | 7e95d7d9ba564e419cada946087df33b | 03000000000000000000000000000000 | xor'ed | 03000000000000000000000000000000 | NO     |
+#|   | add keys | 3cd49698fb170f00ddece807493cb27a | 3fd49698fb170f00ddece807493cb27a | 03000000000000000000000000000000 | xored  | 03000000000000000000000000000000 | NO     |
+#|   | shift    | 3c17e87afbecb298dd3c960049d40f07 | 3f17e87afbecb298dd3c960049d40f07 | 03000000000000000000000000000000 | xor'ed | 03000000000000000000000000000000 | shift  |
+#|!  | sbox     | ebf09bda0fce3746c1eb90633b4876c5 | 75f09bda0fce3746c1eb90633b4876c5 | 9e000000000000000000000000000000 | xor'ed | 9e000000000000000000000000000000 |  1/2^16 |
+#|!  | mix      | 877c43e2269765644cc4b4e51df4cbe2 | a0e2dd5b269765644cc4b4e51df4cbe2 | 279e9eb9000000000000000000000000 | xor'ed | 279e9eb9000000000000000000000000 |        |
+#|!  | add keys | 44be8120a414e6e78f0676279f774861 | 63201f99a414e6e78f0676279f774861 | 279e9eb9000000000000000000000000 | xor'ed | 279e9eb9000000000000000000000000 |        |
+#|!  | sbox     | 1bae0cb749fa8e94736f38ccdbf552ef | fbb7c0ee49fa8e94736f38ccdbf552ef | e019cc59000000000000000000000000 | xor'ed | e019cc59000000000000000000000000 |  1/2^16 |
+#|   | shift    | 1bfa38ef496f52b773f50c94dbae8ecc | fbfa38ef496f52ee73f5c094dbb78ecc | e0000000000000590000cc0000190000 | xor'ed | e019cc59000000000000000000000000 | ishift |
+#|   | mix      | f453bb2ac6d640937a02395f06d93dd5 | 2fb35b119f8fab21b64dba932deb24cc | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | e0000000000000590000cc0000190000 | imix   |
+#|   | add keys | d97d95fb697bedc1166d56cfe835d1c6 | 029d75c030220673da22d503c307c8df | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | dbe0e03b5959ebb2cc4f83cc2b321919 |        |
+#|   |          |                                  |                                  |                                  |        |                                  |        |
+#|   |          |                                  |                                  |                                  |        |                                  |        |
+
+
+#+end_src
+#+begin_src python
+  from z3 import *
+  def print_state(state_list):
+    # Get the maximum length of string representation
+    max_len = max(len(str(x)) for x in state_list)
+    padding = max_len + 2  # Add 2 for some extra space
+
+    # Calculate total width for the box
+    total_width = (padding * 4) + 3  # 4 columns, +3 for spaces between
+
+    # Print with box drawing and adaptive width
+    print('┌' + '─' * total_width + '┐')
+    for i in range(4):
+        row = ' '.join(f'{str(state_list[i*4 + j]):{padding}}' for j in range(4))
+        print(f'│ {row} │')
+    print('└' + '─' * total_width + '┘')
+  def mult2(x):
+    return If(Extract(7,7,x) == 1, (x << 1) ^ BitVecVal(0x1b, 8), x << 1)
+  s_box = (
+      0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
+      0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
+      0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15,
+      0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75,
+      0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84,
+      0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF,
+      0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8,
+      0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2,
+      0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73,
+      0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB,
+      0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79,
+      0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08,
+      0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A,
+      0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E,
+      0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF,
+      0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16,
+  )
+
+  inv_s_box = (
+      0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
+      0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87, 0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB,
+      0x54, 0x7B, 0x94, 0x32, 0xA6, 0xC2, 0x23, 0x3D, 0xEE, 0x4C, 0x95, 0x0B, 0x42, 0xFA, 0xC3, 0x4E,
+      0x08, 0x2E, 0xA1, 0x66, 0x28, 0xD9, 0x24, 0xB2, 0x76, 0x5B, 0xA2, 0x49, 0x6D, 0x8B, 0xD1, 0x25,
+      0x72, 0xF8, 0xF6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xD4, 0xA4, 0x5C, 0xCC, 0x5D, 0x65, 0xB6, 0x92,
+      0x6C, 0x70, 0x48, 0x50, 0xFD, 0xED, 0xB9, 0xDA, 0x5E, 0x15, 0x46, 0x57, 0xA7, 0x8D, 0x9D, 0x84,
+      0x90, 0xD8, 0xAB, 0x00, 0x8C, 0xBC, 0xD3, 0x0A, 0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3, 0x45, 0x06,
+      0xD0, 0x2C, 0x1E, 0x8F, 0xCA, 0x3F, 0x0F, 0x02, 0xC1, 0xAF, 0xBD, 0x03, 0x01, 0x13, 0x8A, 0x6B,
+      0x3A, 0x91, 0x11, 0x41, 0x4F, 0x67, 0xDC, 0xEA, 0x97, 0xF2, 0xCF, 0xCE, 0xF0, 0xB4, 0xE6, 0x73,
+      0x96, 0xAC, 0x74, 0x22, 0xE7, 0xAD, 0x35, 0x85, 0xE2, 0xF9, 0x37, 0xE8, 0x1C, 0x75, 0xDF, 0x6E,
+      0x47, 0xF1, 0x1A, 0x71, 0x1D, 0x29, 0xC5, 0x89, 0x6F, 0xB7, 0x62, 0x0E, 0xAA, 0x18, 0xBE, 0x1B,
+      0xFC, 0x56, 0x3E, 0x4B, 0xC6, 0xD2, 0x79, 0x20, 0x9A, 0xDB, 0xC0, 0xFE, 0x78, 0xCD, 0x5A, 0xF4,
+      0x1F, 0xDD, 0xA8, 0x33, 0x88, 0x07, 0xC7, 0x31, 0xB1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xEC, 0x5F,
+      0x60, 0x51, 0x7F, 0xA9, 0x19, 0xB5, 0x4A, 0x0D, 0x2D, 0xE5, 0x7A, 0x9F, 0x93, 0xC9, 0x9C, 0xEF,
+      0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61,
+      0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D,
+  )
+  solver = Solver()
+  s_bytes =[BitVec(f'b_{i}',8) for i in range(16)]
+  # define sbox
+  ds_box = Array('ds_box', BitVecSort(8), BitVecSort(8))
+  s_index = BitVec('s_index',8)
+  solver.add(s_index >= 0)
+  solver.add(s_index <= 0xff)
+  # polulate sbox
+  for i, s in enumerate(s_box):
+      # s_sbox = Store(s_sbox, BitVecVal(i,8), BitVecVal(s, 8))
+      solver.add(Select(s_sbox,BitVecVal(i,8)) == BitVecVal(s,8))
+
+  # bytes to aes state
+  s_state = [s_bytes[i+j*4] for i in range(4) for j in range(4)]
+
+  print_state(s_state)
+
+  for i in range(16):
+      s_state[i] = Select(s_sbox,s_state[i])
+  print("after sbox: ")
+  print_state(s_state)
+
+  for i in range(0,len(s_state) - 1,4):
+    # print(f"s_state[{i}: {i+ 4}] = s_state[{i + i//4}:{i + 4}], s_state[{i}: {i + i//4}]")
+    s_state[i: i+ 4] = s_state[i + i//4:i + 4] +  s_state[i : i + i//4]
+  print("after shift rows:")
+  print_state(s_state)
+  for i in range(4):
+    a0, a1, a2, a3 = s_state[i::4]
+
+    s_state[i] = mult2(a0) ^ (mult2(a1) ^ a1) ^ a2 ^ a3        # 2*a0 + 3*a1 + a2 + a3
+    s_state[i+4] = a0 ^ mult2(a1) ^ (mult2(a2) ^ a2) ^ a3      # a0 + 2*a1 + 3*a2 + a3
+    s_state[i+8] = a0 ^ a1 ^ mult2(a2) ^ (mult2(a3) ^ a3)      # a0 + a1 + 2*a2 + 3*a3
+    s_state[i+12] = (mult2(a3) ^ a3) ^ a0 ^ a1 ^ mult2(a2)      # 3*a3 + a0 + a1 + 2*a2
+
+  print("after mix columns:")
+  print_state(s_state)
+
+  
+  # solver.add(result == 0xff)
+  # if solver.check() == sat:
+  #      model = solver.model()
+  #      print(model)
+  #      print(f"correct sbox index {model[s_index]}")
+  # print("done")
+
+#|   | plain    | 7d95d7d9ba564e419cada946087df33b | 7e95d7d9ba564e419cada946087df33b | 03000000000000000000000000000000 | xor'ed | 03000000000000000000000000000000 | NO     |
+#|   | add keys | 3cd49698fb170f00ddece807493cb27a | 3fd49698fb170f00ddece807493cb27a | 03000000000000000000000000000000 | xored  | 03000000000000000000000000000000 | NO     |
+#|   | shift    | 3c17e87afbecb298dd3c960049d40f07 | 3f17e87afbecb298dd3c960049d40f07 | 03000000000000000000000000000000 | xor'ed | 03000000000000000000000000000000 | shift  |
+#|!  | sbox     | ebf09bda0fce3746c1eb90633b4876c5 | 75f09bda0fce3746c1eb90633b4876c5 | 9e000000000000000000000000000000 | xor'ed | 9e000000000000000000000000000000 |  1/2^16 |
+#|!  | mix      | 877c43e2269765644cc4b4e51df4cbe2 | a0e2dd5b269765644cc4b4e51df4cbe2 | 279e9eb9000000000000000000000000 | xor'ed | 279e9eb9000000000000000000000000 |        |
+#|!  | add keys | 44be8120a414e6e78f0676279f774861 | 63201f99a414e6e78f0676279f774861 | 279e9eb9000000000000000000000000 | xor'ed | 279e9eb9000000000000000000000000 |        |
+#|!  | sbox     | 1bae0cb749fa8e94736f38ccdbf552ef | fbb7c0ee49fa8e94736f38ccdbf552ef | e019cc59000000000000000000000000 | xor'ed | e019cc59000000000000000000000000 |  1/2^16 |
+#|   | shift    | 1bfa38ef496f52b773f50c94dbae8ecc | fbfa38ef496f52ee73f5c094dbb78ecc | e0000000000000590000cc0000190000 | xor'ed | e019cc59000000000000000000000000 | ishift |
+#|   | mix      | f453bb2ac6d640937a02395f06d93dd5 | 2fb35b119f8fab21b64dba932deb24cc | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | e0000000000000590000cc0000190000 | imix   |
+#|   | add keys | d97d95fb697bedc1166d56cfe835d1c6 | 029d75c030220673da22d503c307c8df | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | dbe0e03b5959ebb2cc4f83cc2b321919 |        |
+#|   |          |                                  |                                  |                                  |        |                                  |        |
+#|   |          |                                  |                                  |                                  |        |                                  |        |
+
+
+#+end_src
+#+RESULTS:
+: None
+
 **** scratch:
 #+begin_src python :session a2s :results output raw
   from Crypto.Cipher import AES
@@ -386,7 +621,7 @@ class A2S:
       ll.append(matrix2bytes(plain_state).hex())
       shift_rows(plain_state)
       ll.append(matrix2bytes(plain_state).hex())
-      mix_columns(plain_state)  # added mix_columns 
+      mix_columns(plain_state)  # added mix_columns
       ll.append(matrix2bytes(plain_state).hex())
       add_round_key(plain_state, key_expand[-1])
       ll.append(matrix2bytes(plain_state).hex())
@@ -415,9 +650,9 @@ class A2S:
       return s
   def ixor(b):
       x = b.split(" | ")
-      s0 = bytearray.fromhex(x[0])
-      s1 = bytearray.fromhex(x[1])
-      s = bytearray([i ^ k for i,k in zip(s0,s1)])
+      a0 = bytearray.fromhex(x[0])
+      a1 = bytearray.fromhex(x[1])
+      s = bytearray([i ^ k for i,k in zip(a0,a1)])
       s = s.hex()
       return s
 
@@ -425,7 +660,13 @@ class A2S:
 
 #+RESULTS:
 
+#+begin_src python :session a2s
+  x = [a, b, c, d]
 
+#+end_src
+
+#+RESULTS:
+: None
 
 P(delta_x) ?= delta_y0 delta_y1 delta_y2 .......
 1/2^128
@@ -442,33 +683,6 @@ key = '41414141414141414141414141414141'
 |   | add keys | d97d95fb697bedc1166d56cfe835d1c6 | 029d75c030220673da22d503c307c8df | dbe0e03b5959ebb2cc4f83cc2b321919 | xor'ed | dbe0e03b5959ebb2cc4f83cc2b321919 |        |
 |   |          |                                  |                                  |                                  |        |                                  |        |
 |   |          |                                  |                                  |                                  |        |                                  |        |
-
-|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
-|7d95d7d9ba564e419cada946087df33b|3cd49698fb170f00ddece807493cb27a|3c17e87afbecb298dd3c960049d40f07|ebf09bda0fce3746c1eb90633b4876c5|877c43e2269765644cc4b4e51df4cbe2|44be8120a414e6e78f0676279f774861|1bae0cb749fa8e94736f38ccdbf552ef|1bfa38ef496f52b773f50c94dbae8ecc|f453bb2ac6d640937a02395f06d93dd5|d97d95fb697bedc1166d56cfe835d1c6|
-|7095d7d9ba564e419cada946087df33b|31d49698fb170f00ddece807493cb27a|3117e87afbecb298dd3c960049d40f07|c7f09bda0fce3746c1eb90633b4876c5|df506f96269765644cc4b4e51df4cbe2|1c92ad54a414e6e78f0676279f774861|9c4f952049fa8e94736f38ccdbf552ef|9cfa38ef496f522073f59594db4f8ecc|e1d43cb85141e2a6e3b210c63e00dc34|ccfa1269feec4ff48fdd7f56d0ec3027| | |
-bytearray(b'\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
-bytearray(b'\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
-bytearray(b'\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
-|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
-|2a633c322fe74c0f8e9aed3601ed02c2|6b227d736ea60d4ecfdbac7740ac4383|6ba6ac836edb4373cfac7d4e40220d77|7f2491ec9fb91a8f8a91ff2f0993d7f5|ef734df76057981c77868fb59ea32bae|2cb18f35e2d41b9fb4444d771c20a82d|71c873969848afdb8d1be3f59cb7c2d8|7148e3d8981bc2968db773db9cc8aff5|010797935265bd5d6bb6aae53a081529|2c29b942fdc8100f07d9c575d4e4f93a|
-|29633c322fe74c0f8e9aed3601ed02c2|68227d736ea60d4ecfdbac7740ac4383|68a6ac836edb4373cfac7d4e40220d77|452491ec9fb91a8f8a91ff2f0993d7f5|9b4977b96057981c77868fb59ea32bae|588bb57be2d41b9fb4444d771c20a82d|6a3dd5219848afdb8d1be3f59cb7c2d8|6a48e3d8981bc2218db7d5db9c3daff5|371c8cbee5d27f28cd47fd433ef9e0dc|1a32a26f4a7fd27aa12892d3d0150ccf| | |
-
-|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
-|2a633c322fe74c0f8e9aed3601ed02c2|6b227d736ea60d4ecfdbac7740ac4383|6ba6ac836edb4373cfac7d4e40220d77|7f2491ec9fb91a8f8a91ff2f0993d7f5|ef734df76057981c77868fb59ea32bae|2cb18f35e2d41b9fb4444d771c20a82d|71c873969848afdb8d1be3f59cb7c2d8|7148e3d8981bc2968db773db9cc8aff5|010797935265bd5d6bb6aae53a081529|2c29b942fdc8100f07d9c575d4e4f93a|
-|27633c322fe74c0f8e9aed3601ed02c2|66227d736ea60d4ecfdbac7740ac4383|66a6ac836edb4373cfac7d4e40220d77|332491ec9fb91a8f8a91ff2f0993d7f5|773f01236057981c77868fb59ea32bae|b4fdc3e1e2d41b9fb4444d771c20a82d|8d542ef89848afdb8d1be3f59cb7c2d8|8d48e3d8981bc2f88db72edb9c54aff5|e2fb6b8c3c0b0f81365110b8852b89b5|cfd5455d93a6a2d35a3e7f286bc765a6| | |
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 | *        |                                * |                                * |                          xor'ed |                                  |                   |
 | plain    | 00000000000000000000000000000000 | 01000000000000000000000000000000 | 1000000000000000000000000000000 |                                  |                   |
@@ -506,8 +720,6 @@ bytearray(b'\x0c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
 | add keys | fafafaa9989999cafafafaa9989999ca | cae2e2818c8da5e2f6eee2a58c8195c6 | 3018182814143c280c14180c14180c0c |
 #+TBLFM: $4='(hex-xor $3 $2)
 
-
-
 #+begin_src python :session a2s
 def print_ddt(ddt, max_rows=30, max_cols=30):
       """Print the DDT in a formatted way, limited to specified dimensions."""
@@ -523,7 +735,7 @@ def print_ddt(ddt, max_rows=30, max_cols=30):
       for i in range(max_rows):
           print(f"{i:2X} |", end=" ")
           for j in range(max_cols):
-              print(f"{ddt[i][j]:2d}", end=" ")
+              print(f"{ddt[i][j]}", end=" ")
           print()
 
 #+end_src
@@ -531,17 +743,34 @@ def print_ddt(ddt, max_rows=30, max_cols=30):
   p0 = 0x41
   res = {}
   size = len(s_box)
-  ddt = [[0 for _ in range(size)] for _ in range(size)]
+  ddt = [[[0,[]] for _ in range(size)] for _ in range(size)]
   for delta_in in range(size):
         for x in range(size):
             y1 = s_box[x]
             y2 = s_box[x ^ delta_in]
             delta_out = y1 ^ y2
-            ddt[delta_in][delta_out] += 1
-    print_ddt(ddt, 50, 50)
-  flatten = [i for k in ddt for i in k]
-  print(flatten.count(256))
+            ddt[delta_in][delta_out][0] += 1
+            ddt[delta_in][delta_out][1] += [hex(x)]
+  #flatten = [i for k in ddt for i in k]
+  print(ddt[0x3][0x9e])
+  p0 = 0x41
+  res = {}
+  size = len(s_box)
+  ddti = [[[0,[]] for _ in range(size)] for _ in range(size)]
+  for delta_in in range(size):
+        for x in range(size):
+            y1 = inv_s_box[x]
+            y2 = inv_s_box[x ^ delta_in]
+            delta_out = y1 ^ y2
+            ddti[delta_in][delta_out][0] += 1
+            ddti[delta_in][delta_out][1] += [hex(x)]
+  #flatten = [i for k in ddt for i in k]
+  print(ddt[0x3][0x9e])
 #+end_src
+
+#+RESULTS:
+: None
+
 #+begin_src emacs-lisp :tangle yes
  (defun hex-xor (a b)
      (interactive
