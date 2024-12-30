@@ -644,35 +644,31 @@ class A2S:
 
   p = []
   c = []
-  plaintext = uuid4().bytes
-  d0 = plaintext #bytearray([0] * 16)
-  d1 = bytearray([0] * 16)
-  d1[0] = 0x01
-  d2 = bytearray([0] * 16)
-  d2[0] = 0x02
-  dc = bytearray([0] * 16)
-  dc[0] = 0x0c
+  d0 = uuid4().bytes
+  d1 = uuid4().bytes
+  d2 = uuid4().bytes
+  dn = bytearray([0x0] * 16)
 
   key = [0x41] * 16
   key = bytearray(key);
   cipher = A2S(key)
   key_expand = cipher._key_matrices
-  delta_ins = [d1,d2,dc]
+  delta_ins = [d0,d1,d2]
   delta_outs = []
   logs = []
   for di in delta_ins:
       ll = []
-      plaintext = [x ^ y for x , y in zip(di,d0)]
+      plaintext = di #[x ^ y for x , y in zip(di,d0)]
       plain_state = bytes2matrix(plaintext)
       ll.append(matrix2bytes(plain_state).hex())
       add_round_key(plain_state, key_expand[0])
       ll.append(matrix2bytes(plain_state).hex())
       for i in range(1, cipher.n_rounds):
-          shift_rows(plain_state) # p4: moved shift_rows here to capture the expected state for testing
+          shift_rows(plain_state)
           ll.append(matrix2bytes(plain_state).hex())
           sub_bytes(plain_state)
           ll.append(matrix2bytes(plain_state).hex())
-          #mix_columns(plain_state)
+          mix_columns(plain_state)
           ll.append(matrix2bytes(plain_state).hex())
           add_round_key(plain_state,key_expand[i])
           ll.append(matrix2bytes(plain_state).hex())
@@ -681,16 +677,16 @@ class A2S:
       ll.append(matrix2bytes(plain_state).hex())
       shift_rows(plain_state)
       ll.append(matrix2bytes(plain_state).hex())
-      #mix_columns(plain_state)  # added mix_columns
+      mix_columns(plain_state)
       ll.append(matrix2bytes(plain_state).hex())
       add_round_key(plain_state, key_expand[-1])
       ll.append(matrix2bytes(plain_state).hex())
       logs.append(ll)
 
 
-  for l in logs[1:]:
+  for l in logs:
       print("|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |")
-      print('|' + '|'.join([i for i in logs[0]]) + '|')
+      #print('|' + '|'.join([i for i in logs[0]]) + '|')
       print('|' + '|'.join([i for i in l]) + '| | |')
       print()
 
@@ -732,11 +728,6 @@ class A2S:
 |          |                                  |                                  |                                0 |   |
 |          |                                  |                                  |                                0 |   |
 #+TBLFM: $4='(hex-xor $3 $2)
-
-|plain |add keys |shift | sbox| mix| add keys  | sbox  | shift | mix  | add keys |
-|241d2cc711104f05beb283c82c7e0d8c|655c6d8650510e44fff3c2896d3f4ccd|6551c2cd50f34c86ff3f6d446d5c0e89|4dd125bd530d294416753c1b3c4aaba7|4dd125bd530d294416753c1b3c4aaba7|8e13e77fd18eaac7d5b7fed9bec92824|197d94d23e19acc603a9bb35aedd3436|1919bb363ea934d203dd94c6ae7dac35|1919bb363ea934d203dd94c6ae7dac35|343795e7910499806fb2fb5640914026|
-|291d2cc711104f05beb283c82c7e0d8c|685c6d8650510e44fff3c2896d3f4ccd|6851c2cd50f34c86ff3f6d446d5c0e89|45d125bd530d294416753c1b3c4aaba7|45d125bd530d294416753c1b3c4aaba7|8613e77fd18eaac7d5b7fed9bec92824|447d94d23e19acc603a9bb35aedd3436|4419bb363ea934d203dd94c6ae7dac35|4419bb363ea934d203dd94c6ae7dac35|693795e7910499806fb2fb5640914026| | |
-
 #+begin_src python :session a2s
   x = [a, b, c, d]
 
